@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import expressWs from 'express-ws';
 import { padEnd } from 'lodash';
 import { v4 } from 'uuid';
+import WebSocket from 'ws';
 
 const PORT = process.env.PORT || 3000;
 
@@ -56,7 +57,8 @@ async function initExpress() {
         type: 'node',
         url: 'file://',
         webSocketDebuggerUrl: `ws://${targetUrl}`,
-    }]));
+    }]));let pendingMessages = [] as string[];
+    let client: WebSocket | null = null;
 
     expressWs(app).app
         .ws('/targets/:targetId', (ws, req) => {
@@ -66,18 +68,28 @@ async function initExpress() {
             }
             ws.on('message', (msg) => {
                 printMessage(cyan, 'Frontend', JSON.parse(msg.toString()));
+                if (!client) {
+                    pendingMessages.push(msg);
+                } else {
+                    client.send(msg);
+                }
             });
             ws.on('close', () => {
                 print(cyan, id, 'disconnected');
             });
         })
-        .ws('/clients', (ws, _req) => {
+        .ws('/client', (ws) => {
+            client = ws;
             ws.on('message', (msg) => {
                 printMessage(cyan, 'Backend', JSON.parse(msg.toString()));
             });
             ws.on('close', () => {
                 print(cyan, id, 'disconnected');
             });
+            pendingMessages.forEach((msg) => {
+                ws.send(msg);
+            });
+            pendingMessages = [];
         });
     app.get('/', (req, res) => {
         res.send('Proxy is up');
